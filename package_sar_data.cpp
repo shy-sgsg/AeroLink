@@ -118,18 +118,14 @@ SAR_DataInfo createSarDataInfo(const AuxHeader& auxHeader) {
     return dataInfo;
 }
 
-// 封装SAR数据打包的核心函数
-bool package_sar_data(const std::string& output_filename, const SAR_DataInfo& data_info, const std::vector<uint8_t>& image_data, uint16_t image_number) {
-    std::ofstream file(output_filename, std::ios::binary);
-    if (!file) {
-        std::cerr << "错误：无法创建输出文件 " << output_filename << std::endl;
-        return false;
-    }
+// SarPacketizer 类的构造函数实现
+SarPacketizer::SarPacketizer(const SAR_DataInfo& data_info, const std::vector<uint8_t>& image_data, uint16_t image_number)
+    : m_currentPacketIndex(0) {
 
     // 协议文档中指出每个数据包的数据部分（SAR_Frame的第21d字节开始）最长为4096字节
     const size_t packet_data_length = 4096;
 
-    // 首先，将 SAR_DataInfo 和图像数据拼接成一个完整的、未分割的“数据信息”
+    // 首先，将 SAR_DataInfo 和图像数据拼接成一个完整的“数据信息”
     size_t data_info_fixed_size = sizeof(SAR_DataInfo);
     size_t total_message_size = data_info_fixed_size + image_data.size();
 
@@ -140,18 +136,16 @@ bool package_sar_data(const std::string& output_filename, const SAR_DataInfo& da
 
     // 根据协议， SAR_DataInfo 的 data_length 字段表示从该字段开始到消息内容结束的长度
     // 也就是 full_message 的总大小
-    // 更新 data_info_bytes，使其包含正确的 data_length 字段
     memcpy(full_message.data() + 2, &total_message_size, sizeof(uint32_t));
 
-    // 计算并填充 SAR_DataInfo 内部的校验和
-    // 校验和从第三字节（消息地址字）开始计算，直到校验和字段前一位
+    // 重新计算并填充 SAR_DataInfo 内部的校验和
     uint8_t internal_checksum = calculate_checksum(full_message.data() + 2, data_info_fixed_size - 2 - sizeof(uint8_t));
     full_message[data_info_fixed_size - sizeof(uint8_t)] = internal_checksum;
 
     // 计算总包数
     size_t total_packets = (total_message_size + packet_data_length - 1) / packet_data_length;
 
-    // 遍历并生成每一个数据包
+    // 遍历并生成每一个数据包，存储在内部的 m_packets 向量中
     for (uint16_t i = 0; i < total_packets; ++i) {
         SAR_Frame frame_header = {};
         frame_header.fixed_value = 0x90E9;
@@ -165,22 +159,37 @@ bool package_sar_data(const std::string& output_filename, const SAR_DataInfo& da
         size_t bytes_to_send = std::min(total_message_size - current_data_offset, (size_t)packet_data_length);
 
         // 准备数据包，大小为当前数据块的实际长度
-        std::vector<uint8_t> packet_data(bytes_to_send);
-        memcpy(packet_data.data(), full_message.data() + current_data_offset, bytes_to_send);
+        std::vector<uint8_t> packet_data(sizeof(SAR_Frame) + bytes_to_send);
 
-        // 根据协议，数据长度字段的值应为当前数据块的实际长度
-        frame_header.data_length = static_cast<uint16_t>(bytes_to_send);
+        // 计算数据包的校验和
+        uint8_t packet_checksum = calculate_checksum(full_message.data() + current_data_offset, bytes_to_send);
+        frame_header.checksum = packet_checksum;
 
-        // 计算当前数据包的校验和
-        frame_header.checksum = calculate_checksum(packet_data.data(), packet_data.size());
+        // 写入帧头
+        memcpy(packet_data.data(), &frame_header, sizeof(SAR_Frame));
+        // 写入数据
+        memcpy(packet_data.data() + sizeof(SAR_Frame), full_message.data() + current_data_offset, bytes_to_send);
 
-        // 写入帧头和数据包
-        file.write(reinterpret_cast<const char*>(&frame_header), sizeof(SAR_Frame));
-        file.write(reinterpret_cast<const char*>(packet_data.data()), packet_data.size());
+        m_packets.push_back(packet_data);
     }
+}
 
-    file.close();
-    return true;
+// 检查是否还有下一个数据包
+bool SarPacketizer::hasNextPacket() const {
+    return m_currentPacketIndex < m_packets.size();
+}
+
+// 获取下一个数据包
+std::vector<uint8_t> SarPacketizer::getNextPacket() {
+    if (hasNextPacket()) {
+        return m_packets[m_currentPacketIndex++];
+    }
+    return {};
+}
+
+// 获取总包数
+size_t SarPacketizer::getTotalPackets() const {
+    return m_packets.size();
 }
 
 // 核心解包函数实现

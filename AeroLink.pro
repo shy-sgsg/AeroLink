@@ -11,15 +11,23 @@ CONFIG += c++17
 
 SOURCES += \
     AuxFileReader.cpp \
+    file_monitor.cpp \
+    image_transfer.cpp \
+    image_utils.cpp \
     logmanager.cpp \
     main.cpp \
     mainwindow.cpp \
+    message_transfer.cpp \
     package_sar_data.cpp
 
 HEADERS += \
     AuxFileReader.h \
+    file_monitor.h \
+    image_transfer.h \
+    image_utils.h \
     logmanager.h \
     mainwindow.h \
+    message_transfer.h \
     package_sar_data.h
 
 FORMS += \

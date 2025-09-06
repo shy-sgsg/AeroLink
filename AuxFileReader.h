@@ -6,6 +6,7 @@
 #include <fstream>
 #include <cstdint> // 用于 int64_t 类型
 #include <cmath>   // 用于 M_PI
+#include <QString>
 
 // 如果编译器没有定义 M_PI，则定义一个常数
 #ifndef M_PI
@@ -86,7 +87,7 @@ public:
     AuxFileReader();
 
     // 核心函数：读取并解析 AUX 文件，返回读取是否成功
-    bool read(const std::string& filename);
+    bool read(const QString& filename);
 
     // 获取读取到的头信息
     AuxHeader getHeader() const;

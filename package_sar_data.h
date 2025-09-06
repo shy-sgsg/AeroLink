@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <QByteArray>
 #include "AuxFileReader.h"
 
 // 确保结构体按照1字节对齐，以匹配协议的字节布局
@@ -93,14 +94,31 @@ struct SAR_DataInfo {
 SAR_DataInfo createSarDataInfo(const AuxHeader& auxHeader);
 
 /**
- * @brief 将SAR图像数据打包成符合协议的二进制文件
- * * @param output_filename 输出文件的路径和名称
- * @param data_info 包含图像元数据的结构体
- * @param image_data 图像的原始字节数据
- * @param image_number 图像编号，用于区分不同的图像
- * @return true 成功打包并写入文件，false 失败
+ * @class SarPacketizer
+ * @brief 负责将完整的SAR数据（数据信息头+图像数据）分割成可发送的数据包。
+ * 它将所有数据包预先生成并存储在内存中，然后通过迭代器式的方法逐个返回。
  */
-bool package_sar_data(const std::string& output_filename, const SAR_DataInfo& data_info, const std::vector<uint8_t>& image_data, uint16_t image_number);
+class SarPacketizer {
+public:
+    // 构造函数：初始化并生成所有数据包
+    SarPacketizer(const SAR_DataInfo& data_info, const std::vector<uint8_t>& image_data, uint16_t image_number);
+
+    // 检查是否还有下一个数据包可获取
+    bool hasNextPacket() const;
+
+    // 获取下一个数据包。返回一个包含帧头和数据部分的完整数据包。
+    // 注意：如果已无数据包，此函数将返回空vector。
+    std::vector<uint8_t> getNextPacket();
+
+    // 获取总包数
+    size_t getTotalPackets() const;
+
+    // QByteArray getPacket(size_t index) const;
+
+private:
+    std::vector<std::vector<uint8_t>> m_packets; // 存储所有生成的完整数据包
+    size_t m_currentPacketIndex;                 // 当前数据包的索引
+};
 
 // 解包 SAR 数据文件
 bool unpackage_sar_data(const std::string& input_filename, const std::string& output_image_filename);
